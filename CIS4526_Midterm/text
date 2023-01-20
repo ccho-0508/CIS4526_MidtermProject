@@ -1,0 +1,498 @@
+{
+cells: [
+{
+cell_type: "code",
+execution_count: 16,
+metadata: { },
+outputs: [
+{
+name: "stderr",
+output_type: "stream",
+text: [
+"[nltk_data] Downloading package wordnet to
+",
+"[nltk_data]     C:\Users\ryanr\AppData\Roaming\nltk_data...
+",
+"[nltk_data]   Package wordnet is already up-to-date!
+"
+]
+}
+],
+source: [
+"import pandas as pd
+",
+"import numpy as np
+",
+"from sklearn.svm import SVC
+",
+"from sklearn.metrics import accuracy_score
+",
+"from sklearn.feature_extraction.text import CountVectorizer, TfidfVectorizer
+",
+"from sklearn.metrics.pairwise import euclidean_distances
+",
+"import string
+",
+"from sklearn.metrics.pairwise import cosine_similarity
+",
+"import contractions
+",
+"from sklearn.preprocessing import StandardScaler
+",
+"from sklearn.pipeline import make_pipeline
+",
+"import nltk
+",
+"from nltk.translate import meteor, meteor_score
+",
+"nltk.download('wordnet')
+",
+"import Levenshtein
+",
+"from nltk.translate.bleu_score import sentence_bleu"
+]
+},
+{
+cell_type: "code",
+execution_count: 17,
+metadata: { },
+outputs: [ ],
+source: [
+"#Open and convert data into dataframes
+",
+"training = open('train_with_label.txt', encoding='utf-8').read().split('\n')[:4077]
+",
+"
+",
+"temp = []
+",
+"for row in training:
+",
+"    temp.append(row.split('\t'))
+",
+"
+",
+"traindf = pd.DataFrame(temp)
+",
+"
+",
+"dev = open('dev_with_label.txt', encoding='utf-8').read().split('\n')
+",
+"
+",
+"temp = []
+",
+"for row in dev:
+",
+"    temp.append(row.split('\t'))
+",
+"
+",
+"devdf = pd.DataFrame(temp)[:-1]
+",
+"
+",
+"#Create string arrays for each dataset
+",
+"train_col1 = traindf.iloc[:,1]
+",
+"train_col2 = traindf.iloc[:,2]
+",
+"
+",
+"dev_col1 = devdf.iloc[:,1]
+",
+"dev_col2 = devdf.iloc[:,2]"
+]
+},
+{
+cell_type: "code",
+execution_count: 18,
+metadata: { },
+outputs: [ ],
+source: [
+"#Clean the strings to remove punctation, remove common words, and lowercase
+",
+"def clean_string(text):
+",
+"    text = text.replace('’', '\'')
+",
+"    text = contractions.fix(text)
+",
+"    text = ''.join([word for word in text if word not in string.punctuation])
+",
+"    text = text.lower()
+",
+"    return text
+",
+"
+",
+"#Define new features
+",
+"def new_features(col1, col2):
+",
+"
+",
+"    #Find Euclidean Distance
+",
+"    edist = []
+",
+"
+",
+"    #Find cosine similarity
+",
+"    csim = []
+",
+"
+",
+"    #Find lengths of sentences (words)
+",
+"    length1 = []
+",
+"    length2 = []
+",
+"
+",
+"    #Find slices of sentences (number of similar words between sentences)
+",
+"    slices = []
+",
+"
+",
+"    #Find meteor scores
+",
+"    mscores = []
+",
+"
+",
+"    #Find Levenshtein distance
+",
+"    ldists = []
+",
+"
+",
+"    #Find BLEU scores
+",
+"    bleu1 = []
+",
+"    bleu2 = []
+",
+"    bleu3 = []
+",
+"
+",
+"    #Find Levenshtein ratio
+",
+"    lratios = []
+",
+"
+",
+"    vectorizer = TfidfVectorizer()
+",
+"    for (sent1, sent2) in zip(col1, col2):
+",
+"
+",
+"        #Euclidean Distances
+",
+"        corpus = [sent1, sent2]
+",
+"        features = vectorizer.fit_transform(corpus).todense() 
+",
+"        edist.append(euclidean_distances(features[0], features[1])[0][0])
+",
+"
+",
+"        #Cosine Similarities
+",
+"        vectors = vectorizer.fit_transform(corpus).toarray()
+",
+"        csim.append(cosine_similarity(vectors)[0][1])
+",
+"
+",
+"        #Lengths of sentences (words)
+",
+"        length1.append(len(sent1.split()))
+",
+"        length2.append(len(sent2.split()))
+",
+"
+",
+"        #Slices
+",
+"        slice = 0  
+",
+"        for word1 in sent1.split():
+",
+"            for word2 in sent2.split():
+",
+"                if word1 == word2:
+",
+"                    slice += 1
+",
+"        slices.append(slice)
+",
+"  
+",
+"        #Meteor Scores
+",
+"        mscore = meteor_score.meteor_score([sent1], sent2)
+",
+"        mscores.append(mscore)
+",
+"
+",
+"        #Levenshtein Distances
+",
+"        ldist = Levenshtein.distance(sent1, sent2)
+",
+"        ldists.append(ldist)
+",
+"
+",
+"        #Levenshtein Ratios
+",
+"        lratio = Levenshtein.ratio(sent1, sent2)
+",
+"        lratios.append(lratio)
+",
+"
+",
+"        #BLEU Scores
+",
+"        bscore1 = sentence_bleu([sent1.split()], sent2.split(), weights=[1])
+",
+"        bleu1.append(bscore1)
+",
+"
+",
+"        bscore2 = sentence_bleu([sent1.split()], sent2.split(), weights=[1/2, 1/2])
+",
+"        bleu2.append(bscore2)
+",
+"
+",
+"        bscore3 = sentence_bleu([sent1.split()], sent2.split(), weights=[1/3, 1/3, 1/3])
+",
+"        bleu3.append(bscore3)
+",
+"
+",
+"    #Find absolute value of difference between lengths
+",
+"    lengthdiff = abs(np.array(length2) - np.array(length1))
+",
+"
+",
+"    return edist, csim, length1, length2, lengthdiff, slices, mscores, ldists, lratios, bleu1, bleu2, bleu3
+",
+"
+",
+"#Create df with new features given two string arrays
+",
+"def new_df(col1, col2):
+",
+"    edist, csim, length1, length2, lengthdiff, slices, mscores, ldists, lratios, bleu1, bleu2, bleu3 = new_features(col1, col2) 
+",
+"
+",
+"    return_df = pd.DataFrame()
+",
+"    return_df['edist'] = edist
+",
+"    return_df['csim'] = csim
+",
+"    return_df['length1'] = length1
+",
+"    return_df['length2'] = length2
+",
+"    return_df['lengthdiff'] = lengthdiff
+",
+"    return_df['slices'] = slices
+",
+"    return_df['mscores'] = mscores
+",
+"    return_df['ldists'] = ldists
+",
+"    return_df['lratios'] = lratios
+",
+"    return_df['bleu1'] = bleu1
+",
+"    return_df['bleu2'] = bleu2
+",
+"    return_df['bleu3'] = bleu3
+",
+"
+",
+"    return return_df"
+]
+},
+{
+cell_type: "code",
+execution_count: 19,
+metadata: { },
+outputs: [ ],
+source: [
+"import warnings
+",
+"
+",
+"warnings.filterwarnings(action='ignore')"
+]
+},
+{
+cell_type: "code",
+execution_count: 20,
+metadata: { },
+outputs: [ ],
+source: [
+"#Create training and dev sets with cleaning
+",
+"train1 = list(map(clean_string, train_col1))
+",
+"train2 = list(map(clean_string, train_col2))
+",
+"
+",
+"dev1 = list(map(clean_string, dev_col1))
+",
+"dev2 = list(map(clean_string, dev_col2))
+",
+"
+",
+"cleantrain = new_df(train1, train2)
+",
+"cleantrain['paraphrase'] = traindf[3]
+",
+"
+",
+"cleandev = new_df(dev1, dev2)
+",
+"cleandev['paraphrase'] = devdf[3]
+",
+"
+",
+"X_train = cleantrain.drop('paraphrase', axis=1)
+",
+"y_train = cleantrain['paraphrase']
+",
+"X_dev = cleandev.drop('paraphrase', axis=1)
+",
+"y_dev = cleandev['paraphrase']"
+]
+},
+{
+cell_type: "code",
+execution_count: 21,
+metadata: { },
+outputs: [
+{
+name: "stdout",
+output_type: "stream",
+text: [
+"Accuracy: 0.755524861878453
+",
+"
+"
+]
+}
+],
+source: [
+"model = SVC(kernel='poly', random_state=9, gamma=0.1, C=10, class_weight='balanced', coef0=10)
+",
+"pipeline = make_pipeline(StandardScaler(with_mean=False), model)
+",
+"
+",
+"pipeline.fit(X_train, y_train)
+",
+"y_pred = pipeline.predict(X_dev)
+",
+"
+",
+"print("Accuracy: {}\n".format(accuracy_score(y_dev,y_pred)))"
+]
+},
+{
+cell_type: "code",
+execution_count: 22,
+metadata: { },
+outputs: [ ],
+source: [
+"test = open('test_without_label.txt', encoding='utf-8').read().split('\n')
+",
+"
+",
+"temp = []
+",
+"for row in test:
+",
+"    temp.append(row.split('\t'))
+",
+"
+",
+"testdf = pd.DataFrame(temp)[:-1]
+",
+"
+",
+"test_col1 = testdf.iloc[:,1]
+",
+"test_col2 = testdf.iloc[:,2]
+",
+"
+",
+"test1 = list(map(clean_string, test_col1))
+",
+"test2 = list(map(clean_string, test_col2))
+",
+"
+",
+"cleantest = new_df(test1, test2)
+",
+"
+",
+"test_pred = pipeline.predict(cleantest)
+",
+"
+",
+"finaldf = pd.DataFrame()
+",
+"finaldf['instance_id'] = testdf.iloc[:,0]
+",
+"finaldf['predicted_label'] = test_pred
+",
+"
+",
+"finaldf.to_csv('RyanAclan_test_result.txt', index=None, sep='\t', mode = 'a')"
+]
+}
+],
+metadata: {
+kernelspec: {
+display_name: "Python 3.7.6 ('base')",
+language: "python",
+name: "python3"
+},
+language_info: {
+codemirror_mode: {
+name: "ipython",
+version: 3
+},
+file_extension: ".py",
+mimetype: "text/x-python",
+name: "python",
+nbconvert_exporter: "python",
+pygments_lexer: "ipython3",
+version: "3.7.6"
+},
+orig_nbformat: 4,
+vscode: {
+interpreter: {
+hash: "51060068504f0ac08f07c76779ded23f779c75b6ec98a50a3896701dbf655d52"
+}
+}
+},
+nbformat: 4,
+nbformat_minor: 2
+}
